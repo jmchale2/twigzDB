@@ -1,6 +1,6 @@
 ///pager.zig
 const std = @import("std");
-const print = std.debug.print;
+// const print = std.debug.print;
 
 pub const Pager = struct {
     file: std.Io.File,
@@ -17,7 +17,7 @@ pub const Pager = struct {
         const size = stat.size;
 
         const pages = @divExact(size, self.page_size);
-        print("Page Info: {d} bytes is {d} pages.\n", .{ size, pages });
+        std.log.info("Page Info: {d} bytes is {d} pages.\n", .{ size, pages });
         return pages;
     }
 

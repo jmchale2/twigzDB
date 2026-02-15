@@ -1,8 +1,6 @@
 /// node.zig
 const std = @import("std");
-const print = std.debug.print;
-
-// enum node_type (leaf, internal)
+// const print = std.debug.print;
 
 const NODE_TYPE_OFFSET = 0;
 const NODE_TYPE_SIZE = 1;
@@ -30,8 +28,6 @@ const INTERNAL_CELL_SIZE = INTERNAL_KEY_SIZE + INTERNAL_CHILD_SIZE;
 const NodeType = enum { LEAF, INTERNAL };
 
 const PageHeader = struct {
-    //largest to smallest
-
     rightmost_pointer: ?u32 = null,
     parent_page_no: ?u32 = null,
     n_cells: u16,
@@ -148,13 +144,13 @@ test "get/set internal cell" {
     const cell_buf: INTERNAL_CHILD_TYPE = 1;
     const internal = InternalCell{ .key = 10, .child_page = cell_buf };
 
-    print("internal in:  {any}\n", .{internal});
+    std.log.info("internal in:  {any}\n", .{internal});
 
     setInternalCell(&page_buf, 0, internal);
 
     const internal_out = getInternalCell(&page_buf, 0);
 
-    print("internal out: {any}\n", .{internal_out});
+    std.log.info("internal out: {any}\n", .{internal_out});
 
     try std.testing.expectEqual(internal, internal_out);
 }
@@ -169,8 +165,8 @@ test "get/set multiple internal cell" {
     const internal = InternalCell{ .key = 10, .child_page = cell_buf };
     const other_internal = InternalCell{ .key = 25, .child_page = other_cell_buf };
 
-    print("internal in:  {any}\n", .{internal});
-    print("ointernal in:  {any}\n", .{other_internal});
+    std.log.info("internal in:  {any}\n", .{internal});
+    std.log.info("ointernal in:  {any}\n", .{other_internal});
 
     setInternalCell(&page_buf, 0, internal);
     setInternalCell(&page_buf, 1, other_internal);
@@ -178,8 +174,8 @@ test "get/set multiple internal cell" {
     const internal_out = getInternalCell(&page_buf, 0);
     const other_internal_out = getInternalCell(&page_buf, 1);
 
-    print("internal out: {any}\n", .{internal_out});
-    print("ointernal out: {any}\n", .{other_internal_out});
+    std.log.info("internal out: {any}\n", .{internal_out});
+    std.log.info("ointernal out: {any}\n", .{other_internal_out});
 
     try std.testing.expectEqual(internal, internal_out);
     try std.testing.expectEqual(other_internal, other_internal_out);
@@ -199,25 +195,25 @@ test "get/set multiple internal cell" {
 test "page header size" {
     // const header = PageHeader{ .parent_page_no = null, .rightmost_pointer = null, .n_cells = 4, .node_type = .LEAF };
     const ph_size = @sizeOf(PageHeader);
-    print("{d}\n", .{ph_size});
+    std.log.info("{d}\n", .{ph_size});
 
     const bit_ph_size = @bitSizeOf(PageHeader);
-    print("{d}\n", .{bit_ph_size});
+    std.log.info("{d}\n", .{bit_ph_size});
 }
 
 test "set and get node type" {
     var buf: [4096]u8 = undefined;
     @memset(&buf, 0);
 
-    print("Initial Headers:  {any:>}\n", .{&buf[0..HEADER_SIZE].*});
+    std.log.info("Initial Headers:  {any:>}\n", .{&buf[0..HEADER_SIZE].*});
 
     setNodeType(&buf, .LEAF);
 
-    print("LEAF Headers:     {any:>}\n", .{&buf[0..HEADER_SIZE].*});
+    std.log.info("LEAF Headers:     {any:>}\n", .{&buf[0..HEADER_SIZE].*});
     try std.testing.expectEqual(NodeType.LEAF, getNodeType(&buf));
 
     setNodeType(&buf, .INTERNAL);
-    print("INTERNAL Headers: {any:>}\n", .{&buf[0..HEADER_SIZE].*});
+    std.log.info("INTERNAL Headers: {any:>}\n", .{&buf[0..HEADER_SIZE].*});
 
     try std.testing.expectEqual(NodeType.INTERNAL, getNodeType(&buf));
 }
