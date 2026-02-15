@@ -1,4 +1,4 @@
-# Database project
+# [WIP] Database project
 
 As it stands, this is a toy project to better understand zig and databases in general.
 
