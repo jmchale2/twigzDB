@@ -61,7 +61,7 @@ pub fn getLeafCell(page_buf: []const u8, index: u32) LeafCell {
     const offset = HEADER_SIZE + (index * LEAF_CELL_SIZE);
 
     const key = std.mem.bytesToValue(LEAF_KEY_TYPE, page_buf[offset..][0..4]);
-    const cell = page_buf[offset + 4 ..][0..256];
+    const cell = page_buf[offset + LEAF_KEY_SIZE ..][0..LEAF_VALUE_SIZE];
     return .{ .key = key, .value = cell.* };
 }
 
@@ -69,9 +69,9 @@ pub fn setLeafCell(page_buf: []u8, index: u32, leaf_cell: LeafCell) void {
     const offset = HEADER_SIZE + (index * LEAF_CELL_SIZE);
 
     const key_bytes = std.mem.toBytes(leaf_cell.key);
-    @memcpy(page_buf[offset..][0..4], &key_bytes);
+    @memcpy(page_buf[offset..][0..LEAF_KEY_SIZE], &key_bytes);
 
-    @memcpy(page_buf[offset + 4 ..][0..256], &leaf_cell.value);
+    @memcpy(page_buf[offset + LEAF_KEY_SIZE ..][0..LEAF_VALUE_SIZE], &leaf_cell.value);
 }
 
 test "get/set leaf cell" {
@@ -123,6 +123,67 @@ test "get/set multiple leaf cells" {
     try std.testing.expectEqual(other_leaf, other_leaf_out);
 }
 
+pub fn getInternalCell(page_buf: []const u8, index: u32) InternalCell {
+    const offset = HEADER_SIZE + (index * INTERNAL_CELL_SIZE);
+
+    const key = std.mem.bytesToValue(INTERNAL_KEY_TYPE, page_buf[offset..][0..INTERNAL_KEY_SIZE]);
+    const cell = std.mem.bytesToValue(INTERNAL_CHILD_TYPE, page_buf[offset + INTERNAL_KEY_SIZE ..][0..INTERNAL_CHILD_SIZE]);
+    return .{ .key = key, .child_page = cell };
+}
+
+pub fn setInternalCell(page_buf: []u8, index: u32, internal_cell: InternalCell) void {
+    const offset = HEADER_SIZE + (index * INTERNAL_CELL_SIZE);
+
+    const key_bytes = std.mem.toBytes(internal_cell.key);
+    @memcpy(page_buf[offset..][0..INTERNAL_KEY_SIZE], &key_bytes);
+
+    const cell_bytes = std.mem.toBytes(internal_cell.child_page);
+    @memcpy(page_buf[offset + INTERNAL_KEY_SIZE ..][0..INTERNAL_CHILD_SIZE], &cell_bytes);
+}
+
+test "get/set internal cell" {
+    var page_buf: [4096]u8 = undefined;
+    @memset(&page_buf, 0);
+
+    const cell_buf: INTERNAL_CHILD_TYPE = 1;
+    const internal = InternalCell{ .key = 10, .child_page = cell_buf };
+
+    print("internal in:  {any}\n", .{internal});
+
+    setInternalCell(&page_buf, 0, internal);
+
+    const internal_out = getInternalCell(&page_buf, 0);
+
+    print("internal out: {any}\n", .{internal_out});
+
+    try std.testing.expectEqual(internal, internal_out);
+}
+
+test "get/set multiple internal cell" {
+    var page_buf: [4096]u8 = undefined;
+    @memset(&page_buf, 0);
+
+    const cell_buf: INTERNAL_CHILD_TYPE = 1;
+    const other_cell_buf: INTERNAL_CHILD_TYPE = 2;
+
+    const internal = InternalCell{ .key = 10, .child_page = cell_buf };
+    const other_internal = InternalCell{ .key = 25, .child_page = other_cell_buf };
+
+    print("internal in:  {any}\n", .{internal});
+    print("ointernal in:  {any}\n", .{other_internal});
+
+    setInternalCell(&page_buf, 0, internal);
+    setInternalCell(&page_buf, 1, other_internal);
+
+    const internal_out = getInternalCell(&page_buf, 0);
+    const other_internal_out = getInternalCell(&page_buf, 1);
+
+    print("internal out: {any}\n", .{internal_out});
+    print("ointernal out: {any}\n", .{other_internal_out});
+
+    try std.testing.expectEqual(internal, internal_out);
+    try std.testing.expectEqual(other_internal, other_internal_out);
+}
 // struct page_header {
 // node_type
 // n_cells,
