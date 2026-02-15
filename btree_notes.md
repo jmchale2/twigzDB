@@ -1,5 +1,7 @@
 # sqlite
 
+[ref](https://sqlite.org/fileformat2.html)
+
 leaf page contains keys
 
 - interior page contains k keys, with k+1 "pointers (uint page number)"  
