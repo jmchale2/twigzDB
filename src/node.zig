@@ -79,13 +79,13 @@ test "get/set leaf cell" {
 
     const leaf = LeafCell{ .key = 10, .value = cell_buf };
 
-    print("leaf in:  {any}\n", .{leaf});
+    std.log.info("leaf in:  {any}\n", .{leaf});
 
     setLeafCell(&page_buf, 0, leaf);
 
     const leaf_out = getLeafCell(&page_buf, 0);
 
-    print("leaf out: {any}\n", .{leaf_out});
+    std.log.info("leaf out: {any}\n", .{leaf_out});
 
     try std.testing.expectEqual(leaf, leaf_out);
 }
