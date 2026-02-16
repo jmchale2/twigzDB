@@ -60,12 +60,12 @@ pub const Pager = struct {
     pub fn allocatePage(self: @This()) !u64 {
         const page_count = try self.pageCount();
 
-        const new_page = page_count + 1;
+        // const new_page = page_count + 1;
         var buf: [self.page_size]u8 = undefined;
         @memset(&buf, 0);
-        try self.writePage(new_page, &buf);
+        try self.writePage(page_count, &buf);
 
-        return new_page;
+        return page_count;
     }
 };
 

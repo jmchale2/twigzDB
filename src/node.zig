@@ -18,6 +18,7 @@ const LEAF_KEY_SIZE = @sizeOf(LEAF_KEY_TYPE);
 const LEAF_VALUE_SIZE = 256;
 const LEAF_VALUE_TYPE: type = [LEAF_VALUE_SIZE]u8;
 const LEAF_CELL_SIZE = LEAF_KEY_SIZE + LEAF_VALUE_SIZE;
+const MAX_LEAF_CELLS = (4096 - HEADER_SIZE) / LEAF_CELL_SIZE;
 
 const INTERNAL_KEY_TYPE: type = u32;
 const INTERNAL_CHILD_TYPE: type = u32;
@@ -25,7 +26,9 @@ const INTERNAL_KEY_SIZE = @sizeOf(INTERNAL_KEY_TYPE);
 const INTERNAL_CHILD_SIZE = @sizeOf(INTERNAL_CHILD_TYPE);
 const INTERNAL_CELL_SIZE = INTERNAL_KEY_SIZE + INTERNAL_CHILD_SIZE;
 
-const NodeType = enum { LEAF, INTERNAL };
+const MAX_INTERNAL_CELLS = (4096 - HEADER_SIZE) / INTERNAL_CELL_SIZE;
+
+pub const NodeType = enum { LEAF, INTERNAL };
 
 const PageHeader = struct {
     rightmost_pointer: ?u32 = null,
@@ -44,15 +47,29 @@ const InternalCell = struct {
     child_page: INTERNAL_CHILD_TYPE,
 };
 
-pub fn setNodeType(page_buf: *[4096]u8, node_type: NodeType) void {
+pub fn setNodeTypeHeader(page_buf: []u8, node_type: NodeType) void {
     const node_type_byte = std.mem.toBytes(node_type);
     page_buf[NODE_TYPE_OFFSET] = node_type_byte[0];
 }
-pub fn getNodeType(page_buf: *[4096]u8) NodeType {
+pub fn getNodeTypeHeader(page_buf: []u8) NodeType {
     const node_type = std.mem.bytesToValue(NodeType, page_buf[NODE_TYPE_OFFSET..NODE_TYPE_SIZE]);
     // print("{any}, {any}\n\n", .{ node_type, (@TypeOf(node_type)) });
     return node_type;
 }
+
+pub fn setCellCountHeader(page_buf: []u8, n_cells: u16) void {
+    // u32 is not right?
+    const bytes = std.mem.toBytes(n_cells);
+    @memcpy(page_buf[N_CELLS_OFFSET..][0..N_CELLS_SIZE], &bytes);
+    // page_buf[N_CELLS_OFFSET] = byte[0];
+}
+pub fn getCellCountHeader(page_buf: []u8) u16 {
+    const n_cells = std.mem.bytesToValue(u16, page_buf[N_CELLS_OFFSET..N_CELLS_SIZE]);
+    // print("{any}, {any}\n\n", .{ node_type, (@TypeOf(node_type)) });
+
+    return n_cells;
+}
+
 pub fn getLeafCell(page_buf: []const u8, index: u32) LeafCell {
     const offset = HEADER_SIZE + (index * LEAF_CELL_SIZE);
 
@@ -196,13 +213,28 @@ test "set and get node type" {
 
     std.log.info("Initial Headers:  {any:>}\n", .{&buf[0..HEADER_SIZE].*});
 
-    setNodeType(&buf, .LEAF);
+    setNodeTypeHeader(&buf, .LEAF);
 
     std.log.info("LEAF Headers:     {any:>}\n", .{&buf[0..HEADER_SIZE].*});
-    try std.testing.expectEqual(NodeType.LEAF, getNodeType(&buf));
+    try std.testing.expectEqual(NodeType.LEAF, getNodeTypeHeader(&buf));
 
-    setNodeType(&buf, .INTERNAL);
+    setNodeTypeHeader(&buf, .INTERNAL);
     std.log.info("INTERNAL Headers: {any:>}\n", .{&buf[0..HEADER_SIZE].*});
 
-    try std.testing.expectEqual(NodeType.INTERNAL, getNodeType(&buf));
+    try std.testing.expectEqual(NodeType.INTERNAL, getNodeTypeHeader(&buf));
+}
+
+test "set and get cell counts" {
+    var buf: [4096]u8 = undefined;
+    @memset(&buf, 0);
+
+    const set_cells: u16 = MAX_INTERNAL_CELLS;
+    setCellCountHeader(&buf, set_cells);
+    const n_cells = getCellCountHeader(&buf);
+    try std.testing.expectEqual(n_cells, set_cells);
+
+    const set_cells2: u16 = 1;
+    setCellCountHeader(&buf, set_cells2);
+    const n_cells2 = getCellCountHeader(&buf);
+    try std.testing.expectEqual(n_cells2, set_cells2);
 }

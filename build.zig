@@ -42,11 +42,19 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     }) });
 
+    const btree_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/btree.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+
     const run_pager_tests = b.addRunArtifact(pager_tests);
     const run_node_tests = b.addRunArtifact(node_tests);
+    const run_btree_tests = b.addRunArtifact(btree_tests);
 
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
     test_step.dependOn(&run_pager_tests.step);
     test_step.dependOn(&run_node_tests.step);
+    test_step.dependOn(&run_btree_tests.step);
 }
