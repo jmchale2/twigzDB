@@ -6,7 +6,7 @@ const node = @import("node.zig");
 
 const print = std.debug.print;
 
-const TreeError = error{AlreadyExists};
+const TreeError = error{ AlreadyExists, PageFull, DuplicateKey };
 
 const SearchResult = struct { index: u32, found: bool };
 
@@ -22,9 +22,9 @@ pub fn initTree(pgr: pager.Pager) !void {
     var buf: [4096]u8 = undefined;
     try pgr.readPage(page_number, &buf);
 
-    // node.setNodeType(&page, .LEAF);
-    //
-    // try pgr.writePage(page_number, page);
+    node.setNodeTypeHeader(&buf, .LEAF);
+
+    try pgr.writePage(page_number, &buf);
 }
 
 test "init tree" {
@@ -44,18 +44,13 @@ test "init tree" {
     var buf: [page_size]u8 = undefined;
     try pgr.readPage(0, &buf);
 
-    node.setNodeTypeHeader(&buf, .LEAF);
-
     const page: [page_size]u8 = @splat(0);
 
     try std.testing.expectEqual(page, buf);
 }
 
-pub fn search(pgr: pager.Pager, page_number: u32, key: u32) !SearchResult {
-    var page_buf: [pgr.page_size]u8 = undefined;
-    try pgr.readPage(page_number, &page_buf);
-
-    const n_cells = node.getCellCountHeader(&page_buf);
+pub fn leafSearch(page_buf: []const u8, key: u32) !SearchResult {
+    const n_cells = node.getCellCountHeader(page_buf);
 
     var low: u32 = 0;
     var high: u32 = n_cells;
@@ -64,7 +59,7 @@ pub fn search(pgr: pager.Pager, page_number: u32, key: u32) !SearchResult {
     while (low < high) {
         mid = @divFloor(low + high, 2);
 
-        const mid_key = node.getLeafCell(&page_buf, mid).key;
+        const mid_key = node.getLeafCell(page_buf, mid).key;
         if (mid_key == key) {
             return .{ .index = mid, .found = true };
         } else if (mid_key < key) {
@@ -128,7 +123,7 @@ test "tree search - all found" {
     };
     var results: [5]SearchResult = undefined;
     for (values, 0..) |v, i| {
-        results[i] = try search(pgr, @as(u32, @intCast(page_idx)), v);
+        results[i] = try leafSearch(&page_buf, v);
     }
 
     try std.testing.expectEqualSlices(SearchResult, &expected_results, &results);
@@ -186,7 +181,7 @@ test "tree search - none found" {
     };
     var results: [5]SearchResult = undefined;
     for (values, 0..) |v, i| {
-        results[i] = try search(pgr, @as(u32, @intCast(page_idx)), v);
+        results[i] = try leafSearch(&page_buf, v);
     }
 
     try std.testing.expectEqualSlices(SearchResult, &expected_results, &results);
@@ -228,8 +223,199 @@ test "tree search - no cells" {
     };
     var results: [5]SearchResult = undefined;
     for (values, 0..) |v, i| {
-        results[i] = try search(pgr, @as(u32, @intCast(page_idx)), v);
+        results[i] = try leafSearch(&page_buf, v);
     }
 
     try std.testing.expectEqualSlices(SearchResult, &expected_results, &results);
+}
+
+pub fn leafInsert(page_buf: []u8, cell: node.LeafCell) !void {
+    const cell_count = node.getCellCountHeader(page_buf);
+    if (cell_count == node.MAX_LEAF_CELLS) {
+        return TreeError.PageFull;
+    }
+
+    const search_result = try leafSearch(page_buf, cell.key);
+    if (search_result.found) return TreeError.DuplicateKey;
+
+    const max_offset = node.HEADER_SIZE + (cell_count * node.LEAF_CELL_SIZE);
+    const search_idx = search_result.index;
+    const cell_start_idx = node.HEADER_SIZE + (search_idx * node.LEAF_CELL_SIZE);
+
+    if (cell_start_idx < max_offset) {
+        @memmove(page_buf[cell_start_idx + node.LEAF_CELL_SIZE .. max_offset + node.LEAF_CELL_SIZE], page_buf[cell_start_idx..max_offset]);
+    }
+
+    node.setLeafCell(page_buf, search_idx, cell);
+
+    const new_cell_count = cell_count + 1;
+    node.setCellCountHeader(page_buf, @as(u16, @intCast(new_cell_count)));
+}
+
+test "leaf insert one" {
+    const page_size = 4096;
+    var page_buf: [page_size]u8 = undefined;
+    @memset(&page_buf, 0);
+    // populate cells
+    node.setNodeTypeHeader(&page_buf, .LEAF);
+
+    try leafInsert(&page_buf, .{ .key = 1, .value = @splat(1) });
+
+    const cell_counter = node.getCellCountHeader(&page_buf);
+    try std.testing.expectEqual(1, cell_counter);
+
+    const results = try leafSearch(&page_buf, 1);
+
+    try std.testing.expectEqual(SearchResult{ .index = 0, .found = true }, results);
+
+    const inserted_cell = node.getLeafCell(&page_buf, 0);
+
+    try std.testing.expectEqual(node.LeafCell{ .key = 1, .value = @splat(1) }, inserted_cell);
+}
+
+test "leaf shift and insert one left" {
+    const page_size = 4096;
+
+    var page_buf: [page_size]u8 = undefined;
+    @memset(&page_buf, 0);
+
+    // populate cells
+    node.setNodeTypeHeader(&page_buf, .LEAF);
+    // insert one cell
+    try leafInsert(&page_buf, .{ .key = 5, .value = @splat(5) });
+    // insert a cell to the left
+    try leafInsert(&page_buf, .{ .key = 1, .value = @splat(1) });
+
+    const cell_counter = node.getCellCountHeader(&page_buf);
+    try std.testing.expectEqual(2, cell_counter);
+
+    // Check on LEFT value
+    const results = try leafSearch(&page_buf, 1);
+
+    try std.testing.expectEqual(SearchResult{ .index = 0, .found = true }, results);
+    const inserted_cell = node.getLeafCell(&page_buf, 0);
+
+    // Check on RIGHT value
+    const right_results = try leafSearch(&page_buf, 5);
+    try std.testing.expectEqual(SearchResult{ .index = 1, .found = true }, right_results);
+    const right_inserted_cell = node.getLeafCell(&page_buf, 1);
+
+    try std.testing.expectEqual(node.LeafCell{ .key = 1, .value = @splat(1) }, inserted_cell);
+    try std.testing.expectEqual(node.LeafCell{ .key = 5, .value = @splat(5) }, right_inserted_cell);
+}
+
+test "leaf insert one right" {
+    const page_size = 4096;
+
+    var page_buf: [page_size]u8 = undefined;
+    @memset(&page_buf, 0);
+
+    // populate cells
+    node.setNodeTypeHeader(&page_buf, .LEAF);
+    // insert one cell
+    try leafInsert(&page_buf, .{ .key = 1, .value = @splat(1) });
+    // insert a cell to the right
+    try leafInsert(&page_buf, .{ .key = 5, .value = @splat(5) });
+
+    const cell_counter = node.getCellCountHeader(&page_buf);
+    try std.testing.expectEqual(2, cell_counter);
+
+    // Check on LEFT value
+    const results = try leafSearch(&page_buf, 1);
+
+    const right_results = try leafSearch(&page_buf, 5);
+
+    try std.testing.expectEqual(SearchResult{ .index = 0, .found = true }, results);
+    const inserted_cell = node.getLeafCell(&page_buf, 0);
+
+    // Check on RIGHT value
+    try std.testing.expectEqual(SearchResult{ .index = 1, .found = true }, right_results);
+    const right_inserted_cell = node.getLeafCell(&page_buf, 1);
+
+    try std.testing.expectEqual(node.LeafCell{ .key = 1, .value = @splat(1) }, inserted_cell);
+    try std.testing.expectEqual(node.LeafCell{ .key = 5, .value = @splat(5) }, right_inserted_cell);
+}
+
+test "leaf insert many" {
+    const page_size = 4096;
+    var page_buf: [page_size]u8 = undefined;
+    @memset(&page_buf, 0);
+    // populate cells
+    node.setNodeTypeHeader(&page_buf, .LEAF);
+
+    var insert_cells: [7]node.LeafCell = .{
+        .{ .key = 1, .value = @splat(1) },
+        .{ .key = 3, .value = @splat(2) },
+        .{ .key = 5, .value = @splat(3) },
+        .{ .key = 15, .value = @splat(4) },
+        .{ .key = 50, .value = @splat(5) },
+        .{ .key = 80, .value = @splat(6) },
+        .{ .key = 100, .value = @splat(7) },
+    };
+
+    var prng = std.Random.DefaultPrng.init(15);
+    const rand = prng.random();
+    rand.shuffle(node.LeafCell, &insert_cells);
+    // print("Actual insertion order\n", .{});
+    // for (insert_cells) |cell| {
+    //     print("{d}\n", .{cell.key});
+    // }
+    //
+    // Actual insertion order
+    // 1
+    // 80
+    // 3
+    // 50
+    // 100
+    // 5
+    // 15
+
+    const key_order: [7]u32 = .{ 1, 3, 5, 15, 50, 80, 100 };
+
+    //insert cells
+    for (insert_cells) |cell| {
+        try leafInsert(&page_buf, cell);
+    }
+
+    var returned_keys: [7]u32 = undefined;
+    for (key_order, 0..) |key, idx| {
+        _ = key;
+        returned_keys[idx] = node.getLeafCell(&page_buf, @as(u32, @intCast(idx))).key;
+    }
+    // print("{any}\n", .{returned_keys});
+
+    try std.testing.expectEqualSlices(u32, &key_order, &returned_keys);
+}
+
+test "leaf insert - duplicate key" {
+    const page_size = 4096;
+    var page_buf: [page_size]u8 = undefined;
+    @memset(&page_buf, 0);
+    // populate cells
+    node.setNodeTypeHeader(&page_buf, .LEAF);
+
+    try leafInsert(&page_buf, .{ .key = 1, .value = @splat(1) });
+
+    try std.testing.expectError(
+        TreeError.DuplicateKey,
+        leafInsert(&page_buf, .{ .key = 1, .value = @splat(1) }),
+    );
+}
+
+test "leaf insert - page full" {
+    const page_size = 4096;
+    var page_buf: [page_size]u8 = undefined;
+    @memset(&page_buf, 0);
+    // populate cells
+    node.setNodeTypeHeader(&page_buf, .LEAF);
+
+    var i: u32 = 0;
+    while (i < node.MAX_LEAF_CELLS) : (i += 1) {
+        try leafInsert(&page_buf, .{ .key = i, .value = @splat(1) });
+    }
+
+    try std.testing.expectError(
+        TreeError.PageFull,
+        leafInsert(&page_buf, .{ .key = i + 1, .value = @splat(1) }),
+    );
 }

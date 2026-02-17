@@ -10,23 +10,23 @@ const PARENT_PAGE_OFFSET = 3;
 const PARENT_PAGE_SIZE = 4;
 const RIGHT_CHILD_OFFSET = 7;
 const RIGHT_CHILD_SIZE = 4;
-const HEADER_SIZE = 11;
+pub const HEADER_SIZE = 11;
 
 const LEAF_KEY_TYPE: type = u32;
 const LEAF_KEY_SIZE = @sizeOf(LEAF_KEY_TYPE);
 
 const LEAF_VALUE_SIZE = 256;
 const LEAF_VALUE_TYPE: type = [LEAF_VALUE_SIZE]u8;
-const LEAF_CELL_SIZE = LEAF_KEY_SIZE + LEAF_VALUE_SIZE;
-const MAX_LEAF_CELLS = (4096 - HEADER_SIZE) / LEAF_CELL_SIZE;
+pub const LEAF_CELL_SIZE = LEAF_KEY_SIZE + LEAF_VALUE_SIZE;
+pub const MAX_LEAF_CELLS = (4096 - HEADER_SIZE) / LEAF_CELL_SIZE;
 
 const INTERNAL_KEY_TYPE: type = u32;
 const INTERNAL_CHILD_TYPE: type = u32;
 const INTERNAL_KEY_SIZE = @sizeOf(INTERNAL_KEY_TYPE);
 const INTERNAL_CHILD_SIZE = @sizeOf(INTERNAL_CHILD_TYPE);
-const INTERNAL_CELL_SIZE = INTERNAL_KEY_SIZE + INTERNAL_CHILD_SIZE;
+pub const INTERNAL_CELL_SIZE = INTERNAL_KEY_SIZE + INTERNAL_CHILD_SIZE;
 
-const MAX_INTERNAL_CELLS = (4096 - HEADER_SIZE) / INTERNAL_CELL_SIZE;
+pub const MAX_INTERNAL_CELLS = (4096 - HEADER_SIZE) / INTERNAL_CELL_SIZE;
 
 pub const NodeType = enum { LEAF, INTERNAL };
 
@@ -37,7 +37,7 @@ const PageHeader = struct {
     node_type: NodeType,
 };
 
-const LeafCell = struct {
+pub const LeafCell = struct {
     key: LEAF_KEY_TYPE,
     value: LEAF_VALUE_TYPE,
 };
@@ -51,7 +51,7 @@ pub fn setNodeTypeHeader(page_buf: []u8, node_type: NodeType) void {
     const node_type_byte = std.mem.toBytes(node_type);
     page_buf[NODE_TYPE_OFFSET] = node_type_byte[0];
 }
-pub fn getNodeTypeHeader(page_buf: []u8) NodeType {
+pub fn getNodeTypeHeader(page_buf: []const u8) NodeType {
     const node_type = std.mem.bytesToValue(NodeType, page_buf[NODE_TYPE_OFFSET..NODE_TYPE_SIZE]);
     // print("{any}, {any}\n\n", .{ node_type, (@TypeOf(node_type)) });
     return node_type;
@@ -63,7 +63,7 @@ pub fn setCellCountHeader(page_buf: []u8, n_cells: u16) void {
     @memcpy(page_buf[N_CELLS_OFFSET..][0..N_CELLS_SIZE], &bytes);
     // page_buf[N_CELLS_OFFSET] = byte[0];
 }
-pub fn getCellCountHeader(page_buf: []u8) u16 {
+pub fn getCellCountHeader(page_buf: []const u8) u16 {
     const n_cells = std.mem.bytesToValue(u16, page_buf[N_CELLS_OFFSET..N_CELLS_SIZE]);
     // print("{any}, {any}\n\n", .{ node_type, (@TypeOf(node_type)) });
 
