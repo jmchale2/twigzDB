@@ -47,6 +47,10 @@ const InternalCell = struct {
     child_page: INTERNAL_CHILD_TYPE,
 };
 
+pub fn getLeafOffset(cell_index: u32) u32 {
+    return HEADER_SIZE + (cell_index * LEAF_CELL_SIZE);
+}
+
 pub fn setNodeTypeHeader(page_buf: []u8, node_type: NodeType) void {
     const node_type_byte = std.mem.toBytes(node_type);
     page_buf[NODE_TYPE_OFFSET] = node_type_byte[0];
@@ -71,7 +75,7 @@ pub fn getCellCountHeader(page_buf: []const u8) u16 {
 }
 
 pub fn getLeafCell(page_buf: []const u8, index: u32) LeafCell {
-    const offset = HEADER_SIZE + (index * LEAF_CELL_SIZE);
+    const offset = getLeafOffset(index);
 
     const key = std.mem.bytesToValue(LEAF_KEY_TYPE, page_buf[offset..][0..4]);
     const cell = page_buf[offset + LEAF_KEY_SIZE ..][0..LEAF_VALUE_SIZE];
@@ -79,7 +83,7 @@ pub fn getLeafCell(page_buf: []const u8, index: u32) LeafCell {
 }
 
 pub fn setLeafCell(page_buf: []u8, index: u32, leaf_cell: LeafCell) void {
-    const offset = HEADER_SIZE + (index * LEAF_CELL_SIZE);
+    const offset = getLeafOffset(index);
 
     const key_bytes = std.mem.toBytes(leaf_cell.key);
     @memcpy(page_buf[offset..][0..LEAF_KEY_SIZE], &key_bytes);
@@ -136,8 +140,11 @@ test "get/set multiple leaf cells" {
     try std.testing.expectEqual(other_leaf, other_leaf_out);
 }
 
+pub fn getInternalOffset(cell_index: u32) u32 {
+    return HEADER_SIZE + (cell_index * INTERNAL_CELL_SIZE);
+}
 pub fn getInternalCell(page_buf: []const u8, index: u32) InternalCell {
-    const offset = HEADER_SIZE + (index * INTERNAL_CELL_SIZE);
+    const offset = getInternalOffset(index);
 
     const key = std.mem.bytesToValue(INTERNAL_KEY_TYPE, page_buf[offset..][0..INTERNAL_KEY_SIZE]);
     const cell = std.mem.bytesToValue(INTERNAL_CHILD_TYPE, page_buf[offset + INTERNAL_KEY_SIZE ..][0..INTERNAL_CHILD_SIZE]);
@@ -145,7 +152,7 @@ pub fn getInternalCell(page_buf: []const u8, index: u32) InternalCell {
 }
 
 pub fn setInternalCell(page_buf: []u8, index: u32, internal_cell: InternalCell) void {
-    const offset = HEADER_SIZE + (index * INTERNAL_CELL_SIZE);
+    const offset = getInternalOffset(index);
 
     const key_bytes = std.mem.toBytes(internal_cell.key);
     @memcpy(page_buf[offset..][0..INTERNAL_KEY_SIZE], &key_bytes);

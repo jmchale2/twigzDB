@@ -238,9 +238,9 @@ pub fn leafInsert(page_buf: []u8, cell: node.LeafCell) !void {
     const search_result = try leafSearch(page_buf, cell.key);
     if (search_result.found) return TreeError.DuplicateKey;
 
-    const max_offset = node.HEADER_SIZE + (cell_count * node.LEAF_CELL_SIZE);
+    const max_offset = node.getLeafOffset(cell_count);
     const search_idx = search_result.index;
-    const cell_start_idx = node.HEADER_SIZE + (search_idx * node.LEAF_CELL_SIZE);
+    const cell_start_idx = node.getLeafOffset(search_idx);
 
     if (cell_start_idx < max_offset) {
         @memmove(page_buf[cell_start_idx + node.LEAF_CELL_SIZE .. max_offset + node.LEAF_CELL_SIZE], page_buf[cell_start_idx..max_offset]);
@@ -418,4 +418,136 @@ test "leaf insert - page full" {
         TreeError.PageFull,
         leafInsert(&page_buf, .{ .key = i + 1, .value = @splat(1) }),
     );
+}
+
+pub fn leafSplit(left_buf: []u8, right_buf: []u8) u32 {
+
+    //do the thing
+    const left_cell_count = node.getCellCountHeader(left_buf);
+    const half_cells = @divFloor(left_cell_count, 2);
+
+    const middle_offset = node.getLeafOffset(half_cells);
+    const end_offset = node.getLeafOffset(left_cell_count);
+    const new_offset = node.getLeafOffset(0);
+    const new_end_offset = new_offset + end_offset - middle_offset;
+
+    @memmove(right_buf[new_offset..new_end_offset], left_buf[middle_offset..end_offset]);
+    @memset(left_buf[middle_offset..end_offset], 0);
+
+    node.setCellCountHeader(left_buf, half_cells);
+    node.setCellCountHeader(right_buf, left_cell_count - half_cells);
+
+    const right_cell = node.getLeafCell(right_buf, 0);
+    const right_lowest_key: u32 = right_cell.key;
+
+    return right_lowest_key;
+}
+
+test "leaf split - base" {
+    const page_size = 4096;
+    var left_buf: [page_size]u8 = undefined;
+    @memset(&left_buf, 0);
+
+    node.setNodeTypeHeader(&left_buf, .LEAF);
+
+    //fill left page
+    var i: u32 = 0;
+    while (i < node.MAX_LEAF_CELLS) : (i += 1) {
+        try leafInsert(&left_buf, .{ .key = i, .value = @splat(1) });
+    }
+
+    // ensure page full would be returned
+    try std.testing.expectError(
+        TreeError.PageFull,
+        leafInsert(&left_buf, .{ .key = i + 1, .value = @splat(1) }),
+    );
+
+    var right_buf: [page_size]u8 = undefined;
+    @memset(&right_buf, 0);
+
+    const initial_left_cell_count = node.getCellCountHeader(&left_buf);
+    const half_cells = @divFloor(initial_left_cell_count, 2);
+    const other_half_cells = initial_left_cell_count - half_cells;
+
+    const new_key = leafSplit(&left_buf, &right_buf);
+
+    const after_left_cell_count = node.getCellCountHeader(&left_buf);
+    const after_right_cell_count = node.getCellCountHeader(&right_buf);
+
+    try std.testing.expectEqual(new_key, 7);
+
+    try std.testing.expectEqual(after_left_cell_count, half_cells);
+    try std.testing.expectEqual(after_right_cell_count, other_half_cells);
+
+    var left_cells: [7]node.LeafCell = undefined;
+    var left_keys: [7]u32 = undefined;
+    i = 0;
+    while (i < half_cells) : (i += 1) {
+        left_cells[i] = node.getLeafCell(&left_buf, i);
+        left_keys[i] = left_cells[i].key;
+    }
+    const expected_left_keys: [7]u32 = .{ 0, 1, 2, 3, 4, 5, 6 };
+
+    try std.testing.expectEqualSlices(u32, &expected_left_keys, &left_keys);
+
+    var right_cells: [8]node.LeafCell = undefined;
+    var right_keys: [8]u32 = undefined;
+    i = 0;
+    while (i < other_half_cells) : (i += 1) {
+        right_cells[i] = node.getLeafCell(&right_buf, i);
+        right_keys[i] = right_cells[i].key;
+    }
+
+    const expected_right_keys: [8]u32 = .{ 7, 8, 9, 10, 11, 12, 13, 14 };
+
+    try std.testing.expectEqualSlices(u32, &expected_right_keys, &right_keys);
+
+    const vacated_offset = node.getLeafOffset(half_cells);
+    const vacated_memory = left_buf[vacated_offset..];
+
+    //uint can't be negative...so this is the same as a @memset.
+    var vacated_sum: u32 = 0;
+    for (vacated_memory) |v| {
+        vacated_sum += v;
+    }
+
+    try std.testing.expectEqual(0, vacated_sum);
+}
+
+test "leaf split - insert each after" {
+    const page_size = 4096;
+    var left_buf: [page_size]u8 = undefined;
+    @memset(&left_buf, 0);
+
+    node.setNodeTypeHeader(&left_buf, .LEAF);
+
+    //fill left page
+    var i: u32 = 0;
+    while (i < node.MAX_LEAF_CELLS) : (i += 1) {
+        try leafInsert(&left_buf, .{ .key = i * 2, .value = @splat(1) });
+    }
+
+    // ensure page full would be returned
+    try std.testing.expectError(
+        TreeError.PageFull,
+        leafInsert(&left_buf, .{ .key = i + 1, .value = @splat(1) }),
+    );
+
+    var right_buf: [page_size]u8 = undefined;
+    @memset(&right_buf, 0);
+
+    const new_key = leafSplit(&left_buf, &right_buf);
+    _ = new_key;
+
+    try leafInsert(&left_buf, .{ .key = 1, .value = @splat(2) });
+    const left_search = try leafSearch(&left_buf, 1);
+
+    try leafInsert(&right_buf, .{ .key = 27, .value = @splat(2) });
+    const right_search = try leafSearch(&right_buf, 27);
+
+    try std.testing.expectEqual(true, left_search.found);
+    try std.testing.expectEqual(true, right_search.found);
+
+    try std.testing.expectEqual(1, left_search.index);
+    try std.testing.expectEqual(7, right_search.index);
 }
